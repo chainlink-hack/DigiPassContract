@@ -157,13 +157,13 @@ contract DigiPass {
     }
 
     /**
-    *@dev create Event
+    *@dev create a new Event using event calldata and organization symbol
     *@notice Create Event creates a new event with the given event call data and organization symbol or abbrevation. Only onboarded entities with organization role access are allowed to create an event. When the event is created a create event is emitted with indexed name and venue of the event created.
     *@param - _event - (event structure)
     */
 
     function createEvent (Event calldata _event,string memory organizationSymbol) public {
-        //require creator/caller is an ORGANIZATION
+        //check that creator/caller is an ORGANIZATION
         require(RegisteredEntities[msg.sender].role == Role.ORGANIZATION,"ORGANIZER_ACCESS_REQUIRED");
         SoulBoundNFT nft = new SoulBoundNFT(msg.sender,_event.organization.name,baseURI,organizationSymbol);
         Event memory newEvent = Event(_event.name,_event.venue,_event.location,_event.imageUrl,_event.availableTickets,_event.date,nft,_event.price,_event.category,_event.organization);
@@ -174,25 +174,25 @@ contract DigiPass {
     }
 
     /**
-    *@dev Purchase Event Tickets
+    *@dev Purchase Event Tickets 
     *@notice Purchase EventTickets is used to purchase a ticket for a particular event given the event ID and ticket type associated with the event. Only onboarded entities with participant role access can purchase tickets for an event. When a ticket is successfully purchased a TicketPurchased event is emitted with index name and ticket number associated with the event.
     *@param - eventID - (event ID)
     *@param - ticketType - (Type of ticket) regular|vip|vvip
     */
 
     function purchaseTicket (uint256 eventID,TicketType ticketType) public payable{
-        //require that ticket buyer is a registered
+        //check that ticket buyer is a registered in the protocol
         require(RegisteredEntities[msg.sender].role == Role.PARTICIPANT);
-        //require that participant has not purchased a ticket
+        //check that participant has not purchased a ticket
         require(!IsParticipant[msg.sender][eventID],"ALREADY_PURCHASED_TICKET");
 
         Event memory e = EventMap[eventID];
         uint price = TicketType.REGULAR == ticketType? e.price.regular:TicketType.VIP == ticketType?e.price.vip:e.price.vvip;
         Ticket[] storage entities = EventEntities[eventID];
         uint ticketNumber = entities.length + 1;
-        //require sufficient ask amount
+        //check that user has sufficient ask amount
         require(msg.value == price, "INSUFFICIENT_ASK)_PRICE");
-        //require tickets availability
+        //check tickets availability
         require(ticketNumber < e.availableTickets,"TICKETS_UNAVAILABLE");
        
         Ticket memory newTicket = Ticket(msg.sender,eventID,ticketNumber,price,ticketType);
@@ -271,7 +271,9 @@ contract DigiPass {
         //Calculate amount realized for event ticket sales
         uint256 amountRealized = reducer(tickets); // this can be considered potential not gas efficient-- possible of-chain considerations
         uint256 valueAfterFees = amountRealized - ((protocolFees * amountRealized)/100);
-
+        //check that period of ticket sales is over
+        require(block.timestamp >= e.date,"TICKET_SALES_ACTIVE");
+        //check that protocol has enough balance
         require(address(this).balance > valueAfterFees,"INSUFFICIENT_BALANCE");
         payable(e.organization._address).transfer(valueAfterFees);
         emit RemittedOrganizer(e.organization.name,e.organization._address,valueAfterFees);
