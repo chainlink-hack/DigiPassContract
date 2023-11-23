@@ -2,18 +2,23 @@
 pragma solidity ^0.8.19;
 
 //============= Enums ==============
+/**
+*@dev Role: Types of role access available to an entity/user in the protocol.
+ */
 enum Role {
     ORGANIZATION,
     PARTICIPANT
 }
-
+/**
+*@dev Ticket types: Types of ticket available for an event
+ */
 enum TicketType {
     REGULAR,
     VIP,
     VVIP
 }
 
-/*
+/** 
 *@dev Categories of events
 */
 
