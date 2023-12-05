@@ -1,22 +1,18 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/utils/Counters.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
 
-contract SoulBoundNFT is ERC721, Ownable {
+contract SoulBoundNFT is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable  {
     /** 
     *@dev Counter for assigning unique token IDs
     */
-    uint256 private tokenIdCounter;
-    /** 
-    *@dev Initial owner address
-    */
-    address immutable initialOwner;
+    uint256 private _nextTokenId;
+    
     /**
     * @dev BaseURI for NFT Metadata
     */
@@ -40,8 +36,7 @@ contract SoulBoundNFT is ERC721, Ownable {
     /**
     *@dev  Constructor to initialize the contract with owner address,organization, baseuri and symbol
     */
-    constructor(address _owner,string memory org,string memory url,string memory sym) ERC721(org, sym) Ownable(initialOwner) {
-        initialOwner = _owner;
+    constructor(address initialOwner,string memory org,string memory url,string memory sym) ERC721(org, sym) Ownable(initialOwner) {
         baseURI = url;
     }
      function _baseURI() internal view override returns (string memory) {
@@ -51,11 +46,13 @@ contract SoulBoundNFT is ERC721, Ownable {
     /**
     *@dev  Mint a new soul-bound token and assign it to the specified owner
     */
-    function mintSoulBound(address to) external onlyOwner {
-        _mint(to, tokenIdCounter);
-        soulBoundTokens[tokenIdCounter] = to;
-        emit SoulBound(tokenIdCounter, to);
-        tokenIdCounter++;
+    function mintSoulBound(address to,string memory uri) external onlyOwner {
+        uint256 tokenId = _nextTokenId++;
+        _safeMint(to, tokenId);
+        _setTokenURI(tokenId, uri);
+        _mint(to, _nextTokenId);
+        soulBoundTokens[_nextTokenId] = to;
+        emit SoulBound(_nextTokenId, to);
     }
 
     /**
@@ -80,11 +77,42 @@ contract SoulBoundNFT is ERC721, Ownable {
     }
 
      /**
-     *@dev  Override the _beforeTokenTransfer function to enforce soul-binding rules
+     *@dev  Override the _update function to enforce soul-binding rules
      */
-    function _beforeTokenTransfer(address from, address to, uint256 tokenId) internal override(ERC721, ERC721Enumerable, ERC721URIStorage) {
-        super._beforeTokenTransfer(from, to, tokenId);
+
+    function _update(address to, uint256 tokenId,address auth) internal virtual override(ERC721,ERC721Enumerable) returns (address) {
+        address result = super._update(to, tokenId,auth);
         // Check if the token is soul-bound before transfer
-        require(soulBoundTokens[tokenId] != from, "TOKEN_BOUND_TO_SELLER");
+        require(soulBoundTokens[tokenId] != address(0), "TOKEN_BOUND_TO_SELLER"); 
+        return result;
     }
+
+    function _increaseBalance(address account, uint128 value)
+        internal
+        override(ERC721, ERC721Enumerable)
+    {
+        super._increaseBalance(account, value);
+    }
+
+    function tokenURI(uint256 tokenId)
+        public
+        view
+        override(ERC721, ERC721URIStorage)
+        returns (string memory)
+    {
+        return super.tokenURI(tokenId);
+    }
+
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        override(ERC721, ERC721Enumerable, ERC721URIStorage)
+        returns (bool)
+    {
+        return super.supportsInterface(interfaceId);
+    }
+
+    
 }
+
+

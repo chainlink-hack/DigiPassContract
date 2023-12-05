@@ -6,39 +6,38 @@ const { assert, expect } = require("chai")
 
 !developmentChains.includes(network.name)
     ? describe.skip
-    : describe("API Consumer Unit Tests", async function () {
+    : describe("DigiPass Unit Tests", async function () {
           //set log level to ignore non errors
           ethers.utils.Logger.setLogLevel(ethers.utils.Logger.levels.ERROR)
 
           // We define a fixture to reuse the same setup in every test.
           // We use loadFixture to run this setup once, snapshot that state,
           // and reset Hardhat Network to that snapshot in every test.
-          async function deployAPIConsumerFixture() {
+          async function deployDigiPassFixture() {
               const [deployer] = await ethers.getSigners()
+              
 
               const chainId = network.config.chainId
 
-              const linkTokenFactory = await ethers.getContractFactory("LinkToken")
-              const linkToken = await linkTokenFactory.connect(deployer).deploy()
+               const digiPassContract = await ethers.getContractFactory("DigiPass")
+               const deployedDigiPassContract = await digiPassContract.connect(deployer).deploy()
 
-              const mockOracleFactory = await ethers.getContractFactory("MockOracle")
-              const mockOracle = await mockOracleFactory.connect(deployer).deploy(linkToken.address)
+               const destinationTicketPurchaser = await ethers.getContractFactory(
+                   "DestinationTicketPurchaser"
+               )
+               const deployedDestinationPurchaser = await destinationTicketPurchaser
+                   .connect(deployer)
+                   .deploy(
+                       networkConfig[chainId]["routerAddress"],
+                       deployedDigiPassContract.address
+                   )
+            console.log("digiPass Contract deployed at:::", deployedDigiPassContract.address)
+            console.log("destinationTicketPurchaser deployed at:::", deployedDestinationPurchaser.address)
 
-              const jobId = ethers.utils.toUtf8Bytes(networkConfig[chainId]["jobId"])
-              const fee = networkConfig[chainId]["fee"]
-
-              const apiConsumerFactory = await ethers.getContractFactory("APIConsumer")
-              const apiConsumer = await apiConsumerFactory
-                  .connect(deployer)
-                  .deploy(mockOracle.address, jobId, fee, linkToken.address)
-
-              const fundAmount = networkConfig[chainId]["fundAmount"] || "1000000000000000000"
-              await linkToken.connect(deployer).transfer(apiConsumer.address, fundAmount)
-
-              return { apiConsumer, mockOracle }
+              return { deployedDigiPassContract, deployedDestinationPurchaser }
           }
 
-          describe("#requestVolumeData", async function () {
+          describe("#Create Events", async function () {
               describe("success", async function () {
                   it("Should successfully make an API request", async function () {
                       const { apiConsumer } = await loadFixture(deployAPIConsumerFixture)

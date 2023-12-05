@@ -5,7 +5,8 @@ require("dotenv").config()
 const COMPILER_SETTINGS = {
     optimizer: {
         enabled: true,
-        runs: 1000000,
+        // runs: 1000000,
+        runs: 200,
     },
     metadata: {
         bytecodeHash: "none",
@@ -36,6 +37,14 @@ const REPORT_GAS = process.env.REPORT_GAS || false
 module.exports = {
     solidity: {
         compilers: [
+            {
+                version: "0.8.20",
+                COMPILER_SETTINGS,
+            },
+            {
+                version: "0.8.19",
+                COMPILER_SETTINGS,
+            },
             {
                 version: "0.8.7",
                 COMPILER_SETTINGS,

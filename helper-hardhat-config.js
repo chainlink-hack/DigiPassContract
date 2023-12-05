@@ -35,6 +35,7 @@ const networkConfig = {
         fee: "100000000000000000",
         fundAmount: "100000000000000000", // 0.1
         automationUpdateInterval: "30",
+        routerAddress:"0xd0daae2231e9cb96b94c8512223533293c3693bf"
     },
     137: {
         name: "polygon",
@@ -57,6 +58,35 @@ const networkConfig = {
         fee: "100000000000000000",
         fundAmount: "100000000000000000", // 0.1
         automationUpdateInterval: "30",
+    },
+
+    28528: {
+        name: "optimism",
+        linkToken: "0xdc2CC710e42857672E7907CF474a69B63B93089f",
+        ethUsdPriceFeed: "0x0715A7794a1dc8e42615F059dD6e406A6594651A",
+        keyHash: "0x4b09e658ed251bcafeebbc69400383d49f344ace09b9576fe248bb02c003fe9f",
+        vrfCoordinator: "0x7a1BaC17Ccc5b313516C5E16fb24f7659aA5ebed",
+        vrfWrapper: "0x99aFAf084eBA697E584501b8Ed2c0B37Dd136693",
+        oracle: "0x40193c8518BB267228Fc409a613bDbD8eC5a97b3",
+        jobId: "ca98366cc7314957b8c012c72f05aeeb",
+        fee: "100000000000000000",
+        fundAmount: "100000000000000000", // 0.1
+        automationUpdateInterval: "30",
+        routerAddress:"0xeb52e9ae4a9fb37172978642d4c141ef53876f26"
+    },
+    43113: {
+        name: "avalanche",
+        linkToken: "0x554472a2720e5e7d5d3c817529aba05eed5f82d8",
+        ethUsdPriceFeed: "0x0715A7794a1dc8e42615F059dD6e406A6594651A",
+        keyHash: "0x4b09e658ed251bcafeebbc69400383d49f344ace09b9576fe248bb02c003fe9f",
+        vrfCoordinator: "0x7a1BaC17Ccc5b313516C5E16fb24f7659aA5ebed",
+        vrfWrapper: "0x99aFAf084eBA697E584501b8Ed2c0B37Dd136693",
+        oracle: "0x40193c8518BB267228Fc409a613bDbD8eC5a97b3",
+        jobId: "ca98366cc7314957b8c012c72f05aeeb",
+        fee: "100000000000000000",
+        fundAmount: "100000000000000000", // 0.1
+        automationUpdateInterval: "30",
+        routerAddress:"0x0b9d5D9136855f6FEc3c0993feE6E9CE8a297846"
     },
 }
 

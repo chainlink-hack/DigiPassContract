@@ -3,7 +3,7 @@ pragma solidity ^0.8.19;
 
 // ============ Imports ============
 import "./enums.sol";
-import "contracts/soulboundNFTSample.sol";
+import "./soulboundNFT.sol";
 //============== Structures ============
 
 /**
@@ -37,6 +37,8 @@ struct Ticket{
     uint256 eventID;
     uint256 ticketNumber;
     uint256 price;
+    bool isVerified;
+    string ticketQrCode;
     TicketType ticketType;
 }
 
@@ -52,32 +54,44 @@ struct Prices {
     uint256 vip;
     uint256 vvip;
 }
+
 /**
-*@dev Structure of Events
-*@notice The event structure contains the event information, this includes the name of the event,venue,location etc. During the creation of any event the organizer will be responsible for accurately filling out the event information.
+*@dev Parameter Structure of Events
+*@notice The EventParams structure contains the event information, this includes the name of the event,venue,location etc. During the creation of any event the organizer will be responsible for accurately filling out the event information.
 *@param - name: the name of the event.
 *@param - venue: the venue that the event will be held.
 *@param - location: the location where the event will be held. This could be some address,remote(virtual) or GPS coordinates.
 *@param - imageUrl: the image url of the event. This is the URL that holds the image information of the event.
 *@param - availableTickets: The number of tickets that is available for the event.
-*@param - date: the date of the event.
+*@param - startDate: the starting date of the event.
+*@param - endDate: the ending date of the event.
 *@param - SoulBoundNFT: The soul bound nft that is tied to the event. 
 *@param - price: Prices of the tickets to attend the event.
 *@param - category: Category of the event eg. Seminar, workshop, art exhibitions etc.
 *@param - Entity: The organizers information of the event.
 */
 
-struct Event{
+struct EventParams{
     string name;
     string venue;
     string location;
     string imageUrl;
+    string eventURL;
     uint256 availableTickets;
-    uint256 date;
-    SoulBoundNFT nft;
+    uint256 startDate;
+    uint256 endDate;
     Prices price;
     Categories category;
     Entity organization;
+}
+/**
+*@dev  Structure of Events
+*@notice The EventParams structure contains the event information, this includes the name of the event,venue,location etc. During the creation of any event the organizer will be responsible for accurately filling out the event information.
+*@param - SoulBoundNFT: The soul bound nft that is tied to the event. 
+*/
+struct Event{
+    EventParams eventParams;
+    SoulBoundNFT nft;
 }
 
 contract DigiPass {
@@ -86,26 +100,27 @@ contract DigiPass {
     *@notice Fees remitted to protocol after the event tickets sales is over. By defualt is  4% of total revenue.
     */
     uint256 immutable protocolFees = 4; //4% of total sold tickets
-     /**
-    *@dev baseURI 
-    *@notice Base URI where the base metadata of all events url will live.
-    */
-    string baseURI ;
+
     /**
     *@dev event counter
     *@notice Counter to track events created in the contract.
     */
     uint256 eventCounter = 0;
     /**
-    *@dev mapping of event IDs to participants addresses
-    *@notice EventEntities holds all tickets that have been purchased for an event. All tickets including regular, vip and vvip tickets.
+    *@dev mapping of event IDs to participants tickets ids.
+    *@notice EventParticipants holds all tickets that have been purchased for an event. All tickets including regular, vip and vvip tickets.
     */
-    mapping (uint256=>Ticket[]) private EventEntities;
+    mapping (uint256=>mapping(uint256=>Ticket)) private EventParticipants;
     /**
     *@dev mapping of participants addresses to participated events
     *@notice Isparticipant holds a boolean value that indicates whether a participant/user has indicated to participate in the event by purchasing a ticket.
     */
     mapping (address => mapping(uint256=>bool)) private IsParticipant;
+    /**
+    *@dev mapping of eventID to participants numbers that participated in the events
+    *@notice totalEventParticipants holds a number value that indicates the total number to participants in the event.
+    */
+    mapping(uint256 => uint256) private totalEventParticipants;
     /**
     *@dev mapping of event IDs to events
     *@notice EventMap keeps track of all created events,referenced by their ID's.
@@ -127,6 +142,22 @@ contract DigiPass {
         _;
     }
 
+    /**
+    *@dev Error Messages for contract
+    */ 
+    error EVENT_EXPIRED_NOT_AVAILABLE(uint256 eventID,string eventName);
+    error EVENT_NOT_STARTED(uint256 eventID,string eventName);
+    error ERROR_UNREGISTERED_ENTITY_ONLY_PARTICIPANTS(address  sender, string eventName);
+    error ALREADY_PURCHASED_TICKET(address  sender, string eventName);
+    error INSUFFICIENT_ASK_PRICE(address  sender, string eventName);
+    error TICKETS_UNAVAILABLE(string eventName);
+    error ORGANIZER_ACCESS_REQUIRED(address  sender,string accessRequired);
+    error TICKET_SALES_ACTIVE(uint256  eventID,string eventName);
+    error INSUFFICIENT_BALANCE(uint256  eventID,string eventName);
+    error TICKET_ALREADY_VERIFIED(uint256  ticketNumber,string eventName);
+    error ALREADY_REGISTERED_ENTITY(address entity);
+    error EVENT_TICKET_EXPIRED(string name,uint256 endDate);
+
 
     //============= Events =====================
     /**
@@ -139,6 +170,11 @@ contract DigiPass {
     *@notice Ticket Purchased event is emitted when a ticket is successfully purchased. This contains an index name and the index ticketNumber associated with the event.
     */
     event TicketPurchased(string indexed name , uint indexed ticketNUmber);
+     /**
+    *@dev Ticket Verified  Event
+    *@notice Ticket Verified event is emitted when a ticket is successfully verified at the event venue. This contains an  event ID, event name and the  ticketNumber associated with the event.
+    */
+    event TicketVerified(uint256 eventID,string eventName,uint256 ticketNumber);
     /**
     *@dev Onboard Success Event
     *@notice Onboard Success event is emitted when an entity (participant or organization) is successfully registered in the protocol.
@@ -150,55 +186,60 @@ contract DigiPass {
     */
     event RemittedOrganizer(string indexed name, address indexed organization, uint indexed valueAfterFees);
 
-    constructor(string memory _baseURI){
+    constructor(){
         //initialize sender as admin
         Admin[msg.sender] = true;
-        baseURI = _baseURI;
     }
 
     /**
     *@dev create a new Event using event calldata and organization symbol
     *@notice Create Event creates a new event with the given event call data and organization symbol or abbrevation. Only onboarded entities with organization role access are allowed to create an event. When the event is created a create event is emitted with indexed name and venue of the event created.
-    *@param - _event - (event structure)
+    *@param _eventParams - (event structure)
+    *@param  organizationSymbol - symbol of the organization
     */
 
-    function createEvent (Event calldata _event,string memory organizationSymbol) public {
+    function createEvent (EventParams calldata _eventParams,string memory organizationSymbol) public {
         //check that creator/caller is an ORGANIZATION
-        require(RegisteredEntities[msg.sender].role == Role.ORGANIZATION,"ORGANIZER_ACCESS_REQUIRED");
-        SoulBoundNFT nft = new SoulBoundNFT(msg.sender,_event.organization.name,baseURI,organizationSymbol);
-        Event memory newEvent = Event(_event.name,_event.venue,_event.location,_event.imageUrl,_event.availableTickets,_event.date,nft,_event.price,_event.category,_event.organization);
+        if(!RegisteredEntities[msg.sender].isVerified || RegisteredEntities[msg.sender].role != Role.ORGANIZATION) revert ORGANIZER_ACCESS_REQUIRED(msg.sender,"ORGANIZATION_ACCESS");
+        SoulBoundNFT nft = new SoulBoundNFT(address(this),_eventParams.organization.name,_eventParams.imageUrl,organizationSymbol);
+        EventParams memory newEventParam = EventParams(_eventParams.name,_eventParams.venue,_eventParams.location,_eventParams.imageUrl,_eventParams.eventURL,_eventParams.availableTickets,_eventParams.startDate,_eventParams.endDate,_eventParams.price,_eventParams.category,_eventParams.organization);
+        Event memory newEvent = Event(newEventParam,nft);
+
         EventMap[eventCounter] = newEvent;
         //Bind soulbound token creation to event
         eventCounter++;
-        emit CreateEvent (newEvent.name,newEvent.venue);
+        emit CreateEvent (newEvent.eventParams.name,newEvent.eventParams.venue);
     }
 
     /**
     *@dev Purchase Event Tickets 
     *@notice Purchase EventTickets is used to purchase a ticket for a particular event given the event ID and ticket type associated with the event. Only onboarded entities with participant role access can purchase tickets for an event. When a ticket is successfully purchased a TicketPurchased event is emitted with index name and ticket number associated with the event.
-    *@param - eventID - (event ID)
-    *@param - ticketType - (Type of ticket) regular|vip|vvip
+    *@param  eventID - (event ID)
+    *@param ticketType - (Type of ticket) regular|vip|vvip
     */
 
-    function purchaseTicket (uint256 eventID,TicketType ticketType) public payable{
-        //check that ticket buyer is a registered in the protocol
-        require(RegisteredEntities[msg.sender].role == Role.PARTICIPANT);
-        //check that participant has not purchased a ticket
-        require(!IsParticipant[msg.sender][eventID],"ALREADY_PURCHASED_TICKET");
-
+    function purchaseTicket (address sender,uint256 eventID,string memory qrCode,TicketType ticketType) public payable{
         Event memory e = EventMap[eventID];
-        uint price = TicketType.REGULAR == ticketType? e.price.regular:TicketType.VIP == ticketType?e.price.vip:e.price.vvip;
-        Ticket[] storage entities = EventEntities[eventID];
-        uint ticketNumber = entities.length + 1;
+        //check that ticket buyer is a registered in the protocol
+        if(!RegisteredEntities[sender].isVerified || RegisteredEntities[sender].role != Role.PARTICIPANT) revert ERROR_UNREGISTERED_ENTITY_ONLY_PARTICIPANTS(sender,e.eventParams.name);
+        //check that participant has not purchased a ticket
+        if(IsParticipant[sender][eventID]) revert ALREADY_PURCHASED_TICKET(sender,e.eventParams.name);
+        //check that event is valid
+        if(e.eventParams.endDate < block.timestamp) revert EVENT_TICKET_EXPIRED(e.eventParams.name,e.eventParams.endDate);
+        uint price = TicketType.REGULAR == ticketType? e.eventParams.price.regular:TicketType.VIP == ticketType?e.eventParams.price.vip:e.eventParams.price.vvip;
+
+        uint ticketNumber = totalEventParticipants[eventID] + 1;
         //check that user has sufficient ask amount
-        require(msg.value == price, "INSUFFICIENT_ASK)_PRICE");
+        if(!(msg.value == price)) revert INSUFFICIENT_ASK_PRICE(sender,e.eventParams.name);
         //check tickets availability
-        require(ticketNumber < e.availableTickets,"TICKETS_UNAVAILABLE");
+        if(!(ticketNumber < e.eventParams.availableTickets)) revert TICKETS_UNAVAILABLE(e.eventParams.name);
        
-        Ticket memory newTicket = Ticket(msg.sender,eventID,ticketNumber,price,ticketType);
-        entities.push(newTicket);
-        e.nft.mintSoulBound(msg.sender);
-        emit TicketPurchased (e.name,ticketNumber);
+        Ticket memory newTicket = Ticket(sender,eventID,ticketNumber,price,false,qrCode,ticketType);
+        EventParticipants[eventID][ticketNumber] = newTicket;
+        totalEventParticipants[eventID] +=1;
+        IsParticipant[sender][eventID] = true;
+        e.nft.mintSoulBound(sender,qrCode);
+        emit TicketPurchased (e.eventParams.name,ticketNumber);
     }
 
     /**
@@ -210,7 +251,7 @@ contract DigiPass {
         Event[] memory e = new Event[](eventCounter);
         uint256 index = 0;
         for(uint i=0;i<eventCounter;){
-            if(EventMap[i].date > block.timestamp){
+            if(EventMap[i].eventParams.endDate > block.timestamp){
                 e[index] = EventMap[i];
                 index++;
             }
@@ -227,7 +268,7 @@ contract DigiPass {
         Event[] memory e = new Event[](eventCounter);
         uint256 index = 0;
         for(uint i=0;i<eventCounter;){
-            if(EventMap[i].date < block.timestamp){
+            if(EventMap[i].eventParams.endDate < block.timestamp){
                 e[index] = EventMap[i];
                 index++;
             }
@@ -235,25 +276,61 @@ contract DigiPass {
         }
         return e;
     }
+    /**
+    *@dev Get single event corresponding to the event ID
+    *@param eventID - ID of the event to be returned
+    */
+    function getEvent(uint256 eventID) public view returns(Event memory){
+        return EventMap[eventID];
+    }
+
+    /**
+    *@dev Verify tickets
+    *@notice Function to verify tickets for an event
+    *@param ticket - Ticket to be verified
+    */ 
+    function verifyTickets (Ticket calldata ticket) public{
+        //ensure that event is available
+        Event memory e = EventMap[ticket.eventID]; 
+        if(block.timestamp>e.eventParams.endDate){
+            revert EVENT_EXPIRED_NOT_AVAILABLE(ticket.eventID,e.eventParams.name);
+        }
+        if(block.timestamp<e.eventParams.startDate){
+            revert EVENT_NOT_STARTED(ticket.eventID,e.eventParams.name);
+        }
+        Ticket storage participantAccess = EventParticipants[ticket.eventID][ticket.ticketNumber];
+        if(participantAccess.isVerified) revert TICKET_ALREADY_VERIFIED(participantAccess.ticketNumber,e.eventParams.name);
+        participantAccess.isVerified = true;
+        //TODO: mint poap to ticket owner
+        emit TicketVerified(ticket.eventID,e.eventParams.name,participantAccess.ticketNumber);
+    }
 
     //================== Admin Functions ==================
 
      /**
     *@dev Onboard entity
     *@notice Onboard entity is an administrator function that is responsible for onboarding users into the protocol after a valid polygon ID proof has been verified. This takes a verified entity information and records it in the protocol database(RegisteredEntities). When an entitity has been successfully registered an OnboardSuccess event is emitted with an indexed name, address and role information of the entity.
-    *@param - entity - (entity structure)
+    *@param entity - (entity structure)
     */
-
     function onboardEntity(Entity memory entity) public admin {
+        if(RegisteredEntities[entity._address].isVerified)revert ALREADY_REGISTERED_ENTITY(entity._address);
         Entity memory e = Entity(entity.name,entity._address,entity.proof,entity.isVerified,entity.role);
         RegisteredEntities[entity._address] = e;
         emit OnboardSuccess(entity.name,entity._address, entity.role);
     }
 
     /**
+    *@dev Check entity registration
+    *@param _entity - address of the entity to check registration details for
+    */ 
+
+    function checkRegistration(address _entity) public view returns(Entity memory){
+        return RegisteredEntities[_entity];
+    }
+    /**
     *@dev Onboard Admin
     *@notice Onboard Admin is an administrative function that is responsible for onboarding admin users/entities into the protocol. This takes an admin address and records it in the protocol admin database (Admin).
-    *@param - address - (new admin )
+    *@param  _admin - (new admin address)
     */
     function onboardAdmin(address _admin) public admin {
        Admin[_admin] = true;
@@ -262,21 +339,20 @@ contract DigiPass {
     /**
     *@dev Remit organizers of events after ticket sales
     *@notice Remit Organizers is an administrative function that is responsible for remitting arcued revenue from purchased tickets of an event when the event ticket sales period is over. This takes the event ID as a parameter and emits a RemittedOrganizer event on successful remitting.
-    *@param - eventID - (ID of the Event )
+    *@param  eventID - (ID of the Event )
     */
 
     function remitOrganizers(uint256 eventID) public admin {
-        Ticket[] memory tickets = EventEntities[eventID];
         Event memory e = EventMap[eventID];
         //Calculate amount realized for event ticket sales
-        uint256 amountRealized = reducer(tickets); // this can be considered potential not gas efficient-- possible of-chain considerations
+        uint256 amountRealized = reducer(eventID); // this can be considered potential not gas efficient-- possible of-chain considerations
         uint256 valueAfterFees = amountRealized - ((protocolFees * amountRealized)/100);
         //check that period of ticket sales is over
-        require(block.timestamp >= e.date,"TICKET_SALES_ACTIVE");
+        if(!(block.timestamp >= e.eventParams.endDate)) revert TICKET_SALES_ACTIVE(eventID,e.eventParams.name);
         //check that protocol has enough balance
-        require(address(this).balance > valueAfterFees,"INSUFFICIENT_BALANCE");
-        payable(e.organization._address).transfer(valueAfterFees);
-        emit RemittedOrganizer(e.organization.name,e.organization._address,valueAfterFees);
+        if(!(address(this).balance > valueAfterFees)) revert INSUFFICIENT_BALANCE(eventID,e.eventParams.name);
+        payable(e.eventParams.organization._address).transfer(valueAfterFees);
+        emit RemittedOrganizer(e.eventParams.organization.name,e.eventParams.organization._address,valueAfterFees);
     }
 
     receive() external payable {}
@@ -285,13 +361,17 @@ contract DigiPass {
     /**
     *@dev Ticket Reducer: This function sums up the ticket prices in a array and returns the result
     */
-    function reducer(Ticket[] memory data) internal pure returns (uint256) {
+    function reducer(uint256 eventID) internal view returns (uint256) {
+        uint256 arrLength = totalEventParticipants[eventID];
+        
         uint256 result = 0;
-        for (uint256 i = 0; i < data.length; i++) {
-            result += data[i].price;
+        for (uint256 i = 0; i < arrLength; i++) {
+            Ticket memory ticket = EventParticipants[eventID][i];
+            result += ticket.price;
         }
         return result;
     }
 }
 
-//["code camp","cole work oo","ikot abasi","https://github.com/sancrystal/image.png",50,1222334455,3,["pampam","0x5B38Da6a701c568545dCfcB03FcB875f56beddC4","0x72e29f32a0cccb4e4fec467368096fe80c5971c5c92c0fe4be3aa41abce12531",true,0]]
+//["code camp","cole work oo","ikot abasi","https://github.com/sancrystal/image.png",50,1222334455,1222334459,[3,5,10],2,["pampam","0x5B38Da6a701c568545dCfcB03FcB875f56beddC4","0x72e29f32a0cccb4e4fec467368096fe80c5971c5c92c0fe4be3aa41abce12531",true,0]]
+//register entity organization ["santacodes","0x5B38Da6a701c568545dCfcB03FcB875f56beddC4","0x9abe48fc59a1b5328811ce50e7ab0260803dc31aefdde3ef42dd052105e7f063",true,0]
