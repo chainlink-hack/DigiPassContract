@@ -6,6 +6,9 @@ const networkConfig = {
         jobId: "29fa9aa13bf1468788b7cc4a500a45b8",
         fundAmount: "1000000000000000000",
         automationUpdateInterval: "30",
+        linkToken: "0xd0daae2231e9cb96b94c8512223533293c3693bf",
+        routerAddress: "0xd0daae2231e9cb96b94c8512223533293c3693bf",
+        ccipBNM: "0xFd57b4ddBf88a4e07fF4e34C487b99af2Fe82a05",
     },
     31337: {
         name: "localhost",
@@ -15,12 +18,16 @@ const networkConfig = {
         fundAmount: "1000000000000000000",
         automationUpdateInterval: "30",
         ethUsdPriceFeed: "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+        linkToken: "0xd0daae2231e9cb96b94c8512223533293c3693bf",
+        routerAddress: "0xd0daae2231e9cb96b94c8512223533293c3693bf",
+        ccipBNM: "0xFd57b4ddBf88a4e07fF4e34C487b99af2Fe82a05",
     },
     1: {
         name: "mainnet",
         linkToken: "0x514910771af9ca656af840dff83e8264ecf986ca",
         fundAmount: "0",
         automationUpdateInterval: "30",
+        ccipBNM: "0xFd57b4ddBf88a4e07fF4e34C487b99af2Fe82a05",
     },
     11155111: {
         name: "sepolia",
@@ -35,7 +42,8 @@ const networkConfig = {
         fee: "100000000000000000",
         fundAmount: "100000000000000000", // 0.1
         automationUpdateInterval: "30",
-        routerAddress:"0xd0daae2231e9cb96b94c8512223533293c3693bf"
+        routerAddress: "0xd0daae2231e9cb96b94c8512223533293c3693bf",
+        ccipBNM: "0xFd57b4ddBf88a4e07fF4e34C487b99af2Fe82a05",
     },
     137: {
         name: "polygon",
@@ -45,6 +53,7 @@ const networkConfig = {
         jobId: "12b86114fa9e46bab3ca436f88e1a912",
         fee: "100000000000000",
         fundAmount: "100000000000000",
+        ccipBNM: "0xf1E3A5842EeEF51F2967b3F05D45DD4f4205FF40",
     },
     80001: {
         name: "mumbai",
@@ -58,6 +67,7 @@ const networkConfig = {
         fee: "100000000000000000",
         fundAmount: "100000000000000000", // 0.1
         automationUpdateInterval: "30",
+        ccipBNM: "0xf1E3A5842EeEF51F2967b3F05D45DD4f4205FF40",
     },
 
     28528: {
@@ -72,7 +82,8 @@ const networkConfig = {
         fee: "100000000000000000",
         fundAmount: "100000000000000000", // 0.1
         automationUpdateInterval: "30",
-        routerAddress:"0xeb52e9ae4a9fb37172978642d4c141ef53876f26"
+        routerAddress: "0xeb52e9ae4a9fb37172978642d4c141ef53876f26",
+        ccipBNM: "0xaBfE9D11A2f1D61990D1d253EC98B5Da00304F16",
     },
     43113: {
         name: "avalanche",
@@ -86,7 +97,8 @@ const networkConfig = {
         fee: "100000000000000000",
         fundAmount: "100000000000000000", // 0.1
         automationUpdateInterval: "30",
-        routerAddress:"0x0b9d5D9136855f6FEc3c0993feE6E9CE8a297846"
+        routerAddress: "0x0b9d5D9136855f6FEc3c0993feE6E9CE8a297846",
+        ccipBNM: "0xD21341536c5cF5EB1bcb58f6723cE26e8D8E90e4",
     },
 }
 

@@ -5,12 +5,13 @@ require("dotenv").config()
 const COMPILER_SETTINGS = {
     optimizer: {
         enabled: true,
-        // runs: 1000000,
         runs: 200,
+        // details: { yul: false }, 
     },
-    metadata: {
-        bytecodeHash: "none",
-    },
+    // metadata: {
+    //     bytecodeHash: "none",
+    // },
+    
 }
 
 const MAINNET_RPC_URL =
@@ -38,27 +39,32 @@ module.exports = {
     solidity: {
         compilers: [
             {
+                version: "0.8.23",
+                settings: COMPILER_SETTINGS,
+            },
+            {
                 version: "0.8.20",
-                COMPILER_SETTINGS,
+                settings: COMPILER_SETTINGS,
             },
             {
                 version: "0.8.19",
-                COMPILER_SETTINGS,
+                settings: COMPILER_SETTINGS,
             },
             {
                 version: "0.8.7",
-                COMPILER_SETTINGS,
+                settings: COMPILER_SETTINGS,
             },
             {
                 version: "0.6.6",
-                COMPILER_SETTINGS,
+                settings: COMPILER_SETTINGS,
             },
             {
                 version: "0.4.24",
-                COMPILER_SETTINGS,
+                settings: COMPILER_SETTINGS,
             },
         ],
     },
+
     networks: {
         hardhat: {
             hardfork: "merge",
@@ -69,9 +75,11 @@ module.exports = {
                 enabled: false,
             },
             chainId: 31337,
+            allowUnlimitedContractSize: true,
         },
         localhost: {
             chainId: 31337,
+            allowUnlimitedContractSize: true,
         },
         sepolia: {
             url: SEPOLIA_RPC_URL !== undefined ? SEPOLIA_RPC_URL : "",
@@ -80,6 +88,7 @@ module.exports = {
             //     mnemonic: MNEMONIC,
             //   },
             chainId: 11155111,
+            allowUnlimitedContractSize: true,
         },
         mainnet: {
             url: MAINNET_RPC_URL,
@@ -88,16 +97,19 @@ module.exports = {
             //     mnemonic: MNEMONIC,
             //   },
             chainId: 1,
+            allowUnlimitedContractSize: true,
         },
         polygon: {
             url: POLYGON_MAINNET_RPC_URL,
             accounts: PRIVATE_KEY !== undefined ? [PRIVATE_KEY] : [],
             chainId: 137,
+            allowUnlimitedContractSize: true,
         },
         mumbai: {
             url: MUMBAI_RPC_URL,
             accounts: PRIVATE_KEY !== undefined ? [PRIVATE_KEY] : [],
             chainId: 80001,
+            allowUnlimitedContractSize: true,
         },
     },
     defaultNetwork: "hardhat",
@@ -120,14 +132,7 @@ module.exports = {
     },
     contractSizer: {
         runOnCompile: false,
-        only: [
-            "APIConsumer",
-            "AutomationCounter",
-            "NFTFloorPriceConsumerV3",
-            "PriceConsumerV3",
-            "RandomNumberConsumerV2",
-            "RandomNumberDirectFundingConsumerV2",
-        ],
+        only: ["DigiPass", "SourceTicketPurchase", "SoulBoundNFT", "Withdraw"],
     },
     paths: {
         sources: "./contracts",

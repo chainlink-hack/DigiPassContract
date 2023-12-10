@@ -6,15 +6,15 @@
 // global scope, and execute the script.
 const { network, run } = require("hardhat")
 
-const { deployDestinationChainContracts } = require("./deployDigipassContracts")
-const { deployDestinationChainContracts } = require("./deploySourceChainContract")
+const { deployDigiPassContracts } = require("./deployDigipassContracts")
+const { deploySourceChainContracts } = require("./deploySourceChainContract")
 
 
 async function main() {
     await run("compile")
     const chainId = network.config.chainId
-    await deployDestinationChainContracts(chainId)
-    await deployDestinationChainContracts(chainId)
+    await deployDigiPassContracts(chainId)
+    await deploySourceChainContracts(chainId)
 }
 
 // We recommend this pattern to be able to use async/await everywhere

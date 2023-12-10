@@ -6,43 +6,51 @@ const {
 } = require("../../helper-hardhat-config")
 
 
-async function deployDestinationChainContracts(chainId) {
+async function deployDigiPassContracts(chainId) {
     //set log level to ignore non errors
-    ethers.utils.Logger.setLogLevel(ethers.utils.Logger.levels.ERROR)
-
-    const accounts = await ethers.getSigners()
-    const deployer = accounts[0]
-
-    const digiPassContract = await ethers.getContractFactory("DigiPass");
-    const deployedDigiPassContract = await digiPassContract.connect(deployer).deploy();
-
-    const destinationTicketPurchaser = await ethers.getContractFactory("DestinationTicketPurchaser");
-    const deployedDestinationPurchaser = await destinationTicketPurchaser.connect(deployer).deploy(networkConfig[chainId]["routerAddress"],deployedDigiPassContract.address);
+    // ethers.utils.Logger.setLogLevel(ethers.utils.Logger.levels.ERROR)
+console.log(`Deploying ${chainId} ${networkConfig[chainId]["ccipBNM"]}`)
+    const account= await ethers.getSigners();
+    const deployer = account[0];
+    
+    const digiPassContractFactory = await ethers.getContractFactory("DigiPass");
+    // console.log("factory:: ", digiPassContractFactory)
+    const deployedDigiPassContract = await digiPassContractFactory
+        .connect(deployer)
+        .deploy(networkConfig[chainId]["routerAddress"], networkConfig[chainId]["ccipBNM"])
 
     const waitBlockConfirmations = developmentChains.includes(network.name)
         ? 1
         : VERIFICATION_BLOCK_CONFIRMATIONS
+        const confiredDeployedContract = await deployedDigiPassContract.waitForDeployment(waitBlockConfirmations)
+     console.log(
+         "deployedDigiPassContract",
+         networkConfig[chainId]["routerAddress"],
+         networkConfig[chainId]["ccipBNM"],
+         confiredDeployedContract.target
+     )
     
-    await deployedDigiPassContract.deployTransaction.wait(waitBlockConfirmations)
-    await deployedDestinationPurchaser.deployTransaction.wait(waitBlockConfirmations)
 
-    console.log(`DigiPass Contract deployed to ${deployedDigiPassContract.address} on ${network.name}`)
-    console.log(`Destination Ticket Purchaser deployed to ${deployedDestinationPurchaser.address} on ${network.name}`)
+    console.log(
+        `DigiPass Contract deployed to ${confiredDeployedContract.target} on ${network.name}  ${
+            process.env.ETHERSCAN_API_KEY
+        } does not exist ${!developmentChains.includes(network.name)}`
+    )
 
     if (!developmentChains.includes(network.name) && process.env.ETHERSCAN_API_KEY) {
         await run("verify:verify", {
-            address: deployedDigiPassContract.address,
-            constructorArguments: [],
-        });
-        console.log(`Digipass Contract address:  ${deployedDigiPassContract.address} has been  verified on ${network.name}`);
-        await run("verify:verify", {
-            address: deployedDestinationPurchaser.address,
-            constructorArguments: [networkConfig[chainId]["routerAddress"],deployedDigiPassContract.address],
-        });
-          console.log(`Destination Chain Contract address:  ${deployedDestinationPurchaser.address} has been  verified on ${network.name}`);
+            address: confiredDeployedContract.target,
+            constructorArguments: [
+                networkConfig[chainId]["routerAddress"],
+                networkConfig[chainId]["ccipBNM"],
+            ],
+        })
+        console.log(
+            `Digipass Contract address:  ${confiredDeployedContract.target} has been  verified on ${network.name}`
+        )
     }
 }
 
 module.exports = {
-    deployDestinationChainContracts,
+    deployDigiPassContracts,
 }

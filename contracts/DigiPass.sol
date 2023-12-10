@@ -1,9 +1,12 @@
 //SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.21;
 
 // ============ Imports ============
 import "./enums.sol";
 import "./soulboundNFT.sol";
+import {CCIPReceiver} from "@chainlink/contracts-ccip/src/v0.8/ccip/applications/CCIPReceiver.sol";
+import {Client} from "@chainlink/contracts-ccip/src/v0.8/ccip/libraries/Client.sol";
+import {LinkTokenInterface} from "@chainlink/contracts/src/v0.8/shared/interfaces/LinkTokenInterface.sol";
 //============== Structures ============
 
 /**
@@ -94,7 +97,12 @@ struct Event{
     SoulBoundNFT nft;
 }
 
-contract DigiPass {
+contract DigiPass is CCIPReceiver {
+    /**
+    *@dev default cross chain purchase token address 
+    *@notice Default token purchase address is the token used for making cross chain ticket purchases (defaulting to ccip-bnm token).
+    */
+    address immutable defaultPurchaseAddress ;
     /**
     *@dev protocolFees 
     *@notice Fees remitted to protocol after the event tickets sales is over. By defualt is  4% of total revenue.
@@ -116,11 +124,22 @@ contract DigiPass {
     *@notice Isparticipant holds a boolean value that indicates whether a participant/user has indicated to participate in the event by purchasing a ticket.
     */
     mapping (address => mapping(uint256=>bool)) private IsParticipant;
+
+    /**
+    *@dev mapping of participants addresses to token balances
+    *@notice crossChainBalances holds the token balances of the entitties buying the tickets.
+    */
+    mapping (address => mapping(address=>uint256)) private CrossChainBalances;
+    /**
+    *@dev mapping of eventID to event ticket purchased via cross chain means
+    *@notice CrossChainTicketPurchasesEventBalance holds the token balances of the events whose tickets where bought via cross chain means.
+    */
+    mapping (uint256 =>uint256) private CrossChainTicketPurchasesEventBalance;
     /**
     *@dev mapping of eventID to participants numbers that participated in the events
-    *@notice totalEventParticipants holds a number value that indicates the total number to participants in the event.
+    *@notice TotalEventParticipants holds a number value that indicates the total number to participants in the event.
     */
-    mapping(uint256 => uint256) private totalEventParticipants;
+    mapping(uint256 => uint256) private TotalEventParticipants;
     /**
     *@dev mapping of event IDs to events
     *@notice EventMap keeps track of all created events,referenced by their ID's.
@@ -131,6 +150,11 @@ contract DigiPass {
     *@notice RegisteredEntities holds information/records of all onboarded users|entities.
     */
     mapping (address => Entity) private RegisteredEntities;
+    /**
+    *@dev mapping of address of register entities to deposited balance currently supports ccip-bnm
+    *@notice Holds the balance of the register entities.
+    */
+    mapping (address =>mapping( address=>uint256)) private DepositedBalances;
 
     /**
     *@dev admin mapping and modifier
@@ -157,7 +181,7 @@ contract DigiPass {
     error TICKET_ALREADY_VERIFIED(uint256  ticketNumber,string eventName);
     error ALREADY_REGISTERED_ENTITY(address entity);
     error EVENT_TICKET_EXPIRED(string name,uint256 endDate);
-
+    error TicketPurchaseFailure();
 
     //============= Events =====================
     /**
@@ -185,10 +209,14 @@ contract DigiPass {
     *@notice Remitted Organizer event is emitted when tickets sales period for an event is over and the protocol successfully transfers revenues arcues from tickets sales to the organization.
     */
     event RemittedOrganizer(string indexed name, address indexed organization, uint indexed valueAfterFees);
+    event TicketPurchaseSuccess();
 
-    constructor(){
+    constructor(address router,address _defaultPurchaseAddress) CCIPReceiver(router){
         //initialize sender as admin
         Admin[msg.sender] = true;
+
+        //initialize default purchase token
+        defaultPurchaseAddress= _defaultPurchaseAddress;// currently only supports CCIP-bnm
     }
 
     /**
@@ -214,12 +242,67 @@ contract DigiPass {
     /**
     *@dev Purchase Event Tickets 
     *@notice Purchase EventTickets is used to purchase a ticket for a particular event given the event ID and ticket type associated with the event. Only onboarded entities with participant role access can purchase tickets for an event. When a ticket is successfully purchased a TicketPurchased event is emitted with index name and ticket number associated with the event.
+    *@param sender address of entity to purchase a ticket for.
     *@param  eventID - (event ID)
+    *@param qrCode - qrcode of the ticket to be minted
     *@param ticketType - (Type of ticket) regular|vip|vvip
     */
 
     function purchaseTicket (address sender,uint256 eventID,string memory qrCode,TicketType ticketType) public payable{
-        Event memory e = EventMap[eventID];
+       ( uint ticketNumber,uint price,Event memory e) = checkTicket(sender, eventID, ticketType);
+        //check that user has sufficient ask amount
+        if(!(msg.value == price)) revert INSUFFICIENT_ASK_PRICE(sender,e.eventParams.name);
+        //check tickets availability
+        if(!(ticketNumber < e.eventParams.availableTickets)) revert TICKETS_UNAVAILABLE(e.eventParams.name);
+        //create a new ticket
+        Ticket memory newTicket = Ticket(sender,eventID,ticketNumber,price,false,qrCode,ticketType);
+        EventParticipants[eventID][ticketNumber] = newTicket;
+        TotalEventParticipants[eventID] +=1;
+        IsParticipant[sender][eventID] = true;
+        //mint soulbound nft to sender
+        e.nft.mintSoulBound(sender,qrCode);
+        emit TicketPurchased (e.eventParams.name,ticketNumber);
+    }
+
+        /**
+    *@dev Cross Chain Purchase Event Tickets 
+    *@notice Cross Chain Purchase EventTickets is used to purchase a ticket for a particular event from a different chain other than the base chain, given the event ID and ticket type associated with the event.This uses a token from the source chain which is mapped to the value of the native token on the destination chain to make purchases. Only onboarded entities with participant role access can purchase tickets for an event. When a ticket is successfully purchased a TicketPurchased event is emitted with index name and ticket number associated with the event.
+    *@param sender address of entity to purchase a ticket for.
+    *@param  eventID - (event ID)
+    *@param qrCode - qrcode of the ticket to be minted
+    *@param ticketType - (Type of ticket) regular|vip|vvip
+    */
+    function purchaseTicketCrossChain(address sender,uint256 eventID,string memory qrCode,TicketType ticketType) external {
+        ( uint ticketNumber,uint price,Event memory e) = checkTicket(sender, eventID, ticketType);
+         //check that user has sufficient ask amount
+        if(!(DepositedBalances[sender][defaultPurchaseAddress]>= price)) revert INSUFFICIENT_ASK_PRICE(sender,e.eventParams.name);
+        DepositedBalances[sender][defaultPurchaseAddress] = DepositedBalances[sender][defaultPurchaseAddress] - price;  //
+        //check tickets availability
+        if(!(ticketNumber < e.eventParams.availableTickets)) revert TICKETS_UNAVAILABLE(e.eventParams.name);
+        //create a new ticket
+        Ticket memory newTicket = Ticket(sender,eventID,ticketNumber,price,false,qrCode,ticketType);
+        EventParticipants[eventID][ticketNumber] = newTicket;
+        TotalEventParticipants[eventID] +=1;
+        IsParticipant[sender][eventID] = true;
+        //update crosschain tickets purchase balance
+        CrossChainTicketPurchasesEventBalance[eventID]=CrossChainTicketPurchasesEventBalance[eventID]+price;
+        //mint soulbound nft to sender
+        e.nft.mintSoulBound(sender,qrCode);
+        emit TicketPurchased (e.eventParams.name,ticketNumber);
+    }
+
+    /**
+     * @dev function that performs a check on tickets purchases
+     * @param sender address of entity to purchase a ticket for.
+     * @param eventID event ID of the current event.
+     * @param ticketType type of ticket to be purchase (regular,vip,vvip).
+     * @return _ticketNumber Ticket number
+     * @return _price price of the current ticket
+     * @return Event 
+     */
+
+    function checkTicket(address sender,uint256 eventID,TicketType ticketType) internal view returns (uint256 _ticketNumber,uint256 _price,Event memory ){
+         Event memory e = EventMap[eventID];
         //check that ticket buyer is a registered in the protocol
         if(!RegisteredEntities[sender].isVerified || RegisteredEntities[sender].role != Role.PARTICIPANT) revert ERROR_UNREGISTERED_ENTITY_ONLY_PARTICIPANTS(sender,e.eventParams.name);
         //check that participant has not purchased a ticket
@@ -228,60 +311,44 @@ contract DigiPass {
         if(e.eventParams.endDate < block.timestamp) revert EVENT_TICKET_EXPIRED(e.eventParams.name,e.eventParams.endDate);
         uint price = TicketType.REGULAR == ticketType? e.eventParams.price.regular:TicketType.VIP == ticketType?e.eventParams.price.vip:e.eventParams.price.vvip;
 
-        uint ticketNumber = totalEventParticipants[eventID] + 1;
-        //check that user has sufficient ask amount
-        if(!(msg.value == price)) revert INSUFFICIENT_ASK_PRICE(sender,e.eventParams.name);
-        //check tickets availability
-        if(!(ticketNumber < e.eventParams.availableTickets)) revert TICKETS_UNAVAILABLE(e.eventParams.name);
-       
-        Ticket memory newTicket = Ticket(sender,eventID,ticketNumber,price,false,qrCode,ticketType);
-        EventParticipants[eventID][ticketNumber] = newTicket;
-        totalEventParticipants[eventID] +=1;
-        IsParticipant[sender][eventID] = true;
-        e.nft.mintSoulBound(sender,qrCode);
-        emit TicketPurchased (e.eventParams.name,ticketNumber);
+        uint ticketNumber = TotalEventParticipants[eventID] + 1;
+        return (ticketNumber, price,e);
+    }
+
+
+    /**
+    *@dev Receive incoming cross-platform message datas
+    *@param message byte message received from chain link client
+    */
+    function _ccipReceive(
+        Client.Any2EVMMessage memory message
+    ) internal override {
+
+        address sender = abi.decode(message.sender, (address)); // abi-decoding of the sender address
+        // Collect tokens transferred.
+        Client.EVMTokenAmount[] memory tokenAmounts = message.destTokenAmounts;
+        address token = tokenAmounts[0].token;
+        uint256 amount = tokenAmounts[0].amount;
+
+        //update sender entity token balance
+        DepositedBalances[sender][token] =  DepositedBalances[sender][defaultPurchaseAddress] + amount;
+        (bool success, ) = address(this).call(message.data);
+        if(!success) revert TicketPurchaseFailure();
+        emit TicketPurchaseSuccess();
     }
 
     /**
-    *@dev Upcoming Events
-    *@notice Upcoming Events shows all events that are available
-    *@return - Events[] - list of upcomming events
+    *@dev EventList
+    *@notice EventList shows all events that are available and unavailable
+    *@return - Events[] - list of all events
     */
-    function upcomingEvents () public view returns(Event[] memory){
+    function EventList () public view returns(Event[] memory){
         Event[] memory e = new Event[](eventCounter);
-        uint256 index = 0;
-        for(uint i=0;i<eventCounter;){
-            if(EventMap[i].eventParams.endDate > block.timestamp){
-                e[index] = EventMap[i];
-                index++;
-            }
+         for(uint i=0;i<eventCounter;){
+            e[i] = EventMap[i];
             i++;
         }
         return e;
-    }
-     /**
-    *@dev Past Events
-    *@notice Past Events shows all events that are unavailable
-    *@return - Events[] - list of past events
-    */
-    function pastEvents () public view returns(Event[] memory){
-        Event[] memory e = new Event[](eventCounter);
-        uint256 index = 0;
-        for(uint i=0;i<eventCounter;){
-            if(EventMap[i].eventParams.endDate < block.timestamp){
-                e[index] = EventMap[i];
-                index++;
-            }
-            i++;
-        }
-        return e;
-    }
-    /**
-    *@dev Get single event corresponding to the event ID
-    *@param eventID - ID of the event to be returned
-    */
-    function getEvent(uint256 eventID) public view returns(Event memory){
-        return EventMap[eventID];
     }
 
     /**
@@ -342,16 +409,23 @@ contract DigiPass {
     *@param  eventID - (ID of the Event )
     */
 
-    function remitOrganizers(uint256 eventID) public admin {
-        Event memory e = EventMap[eventID];
+    function remitOrganizers(uint256 eventID,uint256 valueAfterFees) public admin {
+        Event memory e = EventMap[eventID]; 
         //Calculate amount realized for event ticket sales
-        uint256 amountRealized = reducer(eventID); // this can be considered potential not gas efficient-- possible of-chain considerations
-        uint256 valueAfterFees = amountRealized - ((protocolFees * amountRealized)/100);
+        // uint256 amountRealized = reducer(eventID); // this can be considered potential not gas efficient-- possible of-chain considerations
+        uint256 amountRealizedCrosschain =  CrossChainTicketPurchasesEventBalance[eventID] - ((protocolFees * CrossChainTicketPurchasesEventBalance[eventID])/100);
+        // uint256 valueAfterFees = amountRealized - ((protocolFees * amountRealized)/100);
         //check that period of ticket sales is over
         if(!(block.timestamp >= e.eventParams.endDate)) revert TICKET_SALES_ACTIVE(eventID,e.eventParams.name);
         //check that protocol has enough balance
-        if(!(address(this).balance > valueAfterFees)) revert INSUFFICIENT_BALANCE(eventID,e.eventParams.name);
-        payable(e.eventParams.organization._address).transfer(valueAfterFees);
+        if(!(address(this).balance > valueAfterFees) && !(CrossChainTicketPurchasesEventBalance[eventID] >amountRealizedCrosschain))revert INSUFFICIENT_BALANCE(eventID,e.eventParams.name);
+        //transfer value to event organization
+        if((address(this).balance > valueAfterFees)) {
+            payable(e.eventParams.organization._address).transfer(valueAfterFees);
+        }
+        if(CrossChainTicketPurchasesEventBalance[eventID] >amountRealizedCrosschain){
+            LinkTokenInterface(defaultPurchaseAddress).transfer(e.eventParams.organization._address,amountRealizedCrosschain);
+        }
         emit RemittedOrganizer(e.eventParams.organization.name,e.eventParams.organization._address,valueAfterFees);
     }
 
@@ -361,16 +435,16 @@ contract DigiPass {
     /**
     *@dev Ticket Reducer: This function sums up the ticket prices in a array and returns the result
     */
-    function reducer(uint256 eventID) internal view returns (uint256) {
-        uint256 arrLength = totalEventParticipants[eventID];
+    // function reducer(uint256 eventID) internal view returns (uint256) {
+    //     uint256 arrLength = TotalEventParticipants[eventID];
         
-        uint256 result = 0;
-        for (uint256 i = 0; i < arrLength; i++) {
-            Ticket memory ticket = EventParticipants[eventID][i];
-            result += ticket.price;
-        }
-        return result;
-    }
+    //     uint256 result = 0;
+    //     for (uint256 i = 0; i < arrLength; i++) {
+    //         Ticket memory ticket = EventParticipants[eventID][i];
+    //         result += ticket.price;
+    //     }
+    //     return result;
+    // }
 }
 
 //["code camp","cole work oo","ikot abasi","https://github.com/sancrystal/image.png",50,1222334455,1222334459,[3,5,10],2,["pampam","0x5B38Da6a701c568545dCfcB03FcB875f56beddC4","0x72e29f32a0cccb4e4fec467368096fe80c5971c5c92c0fe4be3aa41abce12531",true,0]]

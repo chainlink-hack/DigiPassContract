@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.19;
-
+//===========================IMPORTS================================================================
 import {LinkTokenInterface} from "@chainlink/contracts/src/v0.8/shared/interfaces/LinkTokenInterface.sol";
 import {IRouterClient} from "@chainlink/contracts-ccip/src/v0.8/ccip/interfaces/IRouterClient.sol";
 import {Client} from "@chainlink/contracts-ccip/src/v0.8/ccip/libraries/Client.sol";
 import {Withdraw} from "./Withdraw.sol";
 import "./enums.sol";
+
 
 contract SourceTicketPurchase is Withdraw {
     enum PayFeesIn {
@@ -15,13 +16,16 @@ contract SourceTicketPurchase is Withdraw {
 
     address immutable i_router;
     address immutable i_link;
+    address immutable defaultToken;
 
     event MessageSent(bytes32 messageId);
 
-    constructor(address router, address link) {
+    constructor(address router, address link,address _defaultToken) {//_defaultToken ccip-bnm
         i_router = router;
         i_link = link;
+        defaultToken = _defaultToken;
         LinkTokenInterface(i_link).approve(i_router, type(uint256).max);
+        LinkTokenInterface(i_link).approve(defaultToken, type(uint256).max);
     }
 
     receive() external payable {}
@@ -30,14 +34,22 @@ contract SourceTicketPurchase is Withdraw {
         uint64 destinationChainSelector,
         uint256 eventID,
         uint256 amount,
+        TicketType typeEvent,
         address sender,
         address receiver,
-        TicketType ticketType
+        address token,
+        string memory qrCode
     ) external {
+        LinkTokenInterface(token).transferFrom(msg.sender,address(this),amount);
+        // Compose the EVMTokenAmountStruct. This struct describes the tokens being transferred using CCIP.
+        Client.EVMTokenAmount memory tokenAmount = Client.EVMTokenAmount({token: token, amount: amount});
+        Client.EVMTokenAmount[] memory tokenAmounts = new Client.EVMTokenAmount[](1);
+        tokenAmounts[0] = tokenAmount;
+
         Client.EVM2AnyMessage memory message = Client.EVM2AnyMessage({
             receiver: abi.encode(receiver),
-            data: abi.encodeWithSignature("purchaseTicket(address,uint256,TicketType)",sender, eventID,ticketType),
-            tokenAmounts: new Client.EVMTokenAmount[](0),
+            data: abi.encodeWithSignature("purchaseTicketCrossChain(address ,uint256,string,TicketType)",sender, eventID,qrCode,typeEvent),
+            tokenAmounts: tokenAmounts,
             extraArgs: "",
             feeToken: address(0)
         });
@@ -49,7 +61,7 @@ contract SourceTicketPurchase is Withdraw {
 
         bytes32 messageId;
 
-        messageId = IRouterClient(i_router).ccipSend{value: fee + amount}(
+        messageId = IRouterClient(i_router).ccipSend{value: fee }(
             destinationChainSelector,
             message
         );
@@ -58,3 +70,13 @@ contract SourceTicketPurchase is Withdraw {
         emit MessageSent(messageId);
     }
 }
+
+
+
+
+
+//sender 0xa620Ba8bEFa099D0b315b64541e771387a3926a9
+//router plygon selector 12532609583862916517
+//router polygon 0x70499c328e1e2a3c41108bd3730f6670a44595d1
+
+//source 0x625f3F82220B94d1661D6225714fCbdc21Bf779e
