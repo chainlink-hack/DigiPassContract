@@ -146,6 +146,11 @@ contract DigiPass is CCIPReceiver {
     */
     mapping (uint256=>Event) private EventMap;
     /**
+    *@dev mapping of event IDs to boolean EventRemmited
+    *@notice EventRemmited keeps track of all remitted events,referenced by their ID's.
+    */
+    mapping (uint256=>bool) private EventRemmited;
+    /**
     *@dev mapping of address of register entities to Entity
     *@notice RegisteredEntities holds information/records of all onboarded users|entities.
     */
@@ -182,6 +187,7 @@ contract DigiPass is CCIPReceiver {
     error ALREADY_REGISTERED_ENTITY(address entity);
     error EVENT_TICKET_EXPIRED(string name,uint256 endDate);
     error TicketPurchaseFailure();
+    error EVENT_ORGANIZERS_REMITTTED(address organization);
 
     //============= Events =====================
     /**
@@ -304,7 +310,7 @@ contract DigiPass is CCIPReceiver {
     function checkTicket(address sender,uint256 eventID,TicketType ticketType) internal view returns (uint256 _ticketNumber,uint256 _price,Event memory ){
          Event memory e = EventMap[eventID];
         //check that ticket buyer is a registered in the protocol
-        if(!RegisteredEntities[sender].isVerified || RegisteredEntities[sender].role != Role.PARTICIPANT) revert ERROR_UNREGISTERED_ENTITY_ONLY_PARTICIPANTS(sender,e.eventParams.name);
+        if(!(RegisteredEntities[sender].isVerified && RegisteredEntities[sender].role == Role.PARTICIPANT)) revert ERROR_UNREGISTERED_ENTITY_ONLY_PARTICIPANTS(sender,e.eventParams.name);
         //check that participant has not purchased a ticket
         if(IsParticipant[sender][eventID]) revert ALREADY_PURCHASED_TICKET(sender,e.eventParams.name);
         //check that event is valid
@@ -411,6 +417,7 @@ contract DigiPass is CCIPReceiver {
 
     function remitOrganizers(uint256 eventID,uint256 valueAfterFees) public admin {
         Event memory e = EventMap[eventID]; 
+        if(EventRemmited[eventID])revert EVENT_ORGANIZERS_REMITTTED(e.eventParams.organization._address);
         //Calculate amount realized for event ticket sales
         // uint256 amountRealized = reducer(eventID); // this can be considered potential not gas efficient-- possible of-chain considerations
         uint256 amountRealizedCrosschain =  CrossChainTicketPurchasesEventBalance[eventID] - ((protocolFees * CrossChainTicketPurchasesEventBalance[eventID])/100);
@@ -426,6 +433,7 @@ contract DigiPass is CCIPReceiver {
         if(CrossChainTicketPurchasesEventBalance[eventID] >amountRealizedCrosschain){
             LinkTokenInterface(defaultPurchaseAddress).transfer(e.eventParams.organization._address,amountRealizedCrosschain);
         }
+        EventRemmited[eventID]=true;
         emit RemittedOrganizer(e.eventParams.organization.name,e.eventParams.organization._address,valueAfterFees);
     }
 
@@ -447,5 +455,23 @@ contract DigiPass is CCIPReceiver {
     // }
 }
 
-//["code camp","cole work oo","ikot abasi","https://github.com/sancrystal/image.png",50,1222334455,1222334459,[3,5,10],2,["pampam","0x5B38Da6a701c568545dCfcB03FcB875f56beddC4","0x72e29f32a0cccb4e4fec467368096fe80c5971c5c92c0fe4be3aa41abce12531",true,0]]
-//register entity organization ["santacodes","0x5B38Da6a701c568545dCfcB03FcB875f56beddC4","0x9abe48fc59a1b5328811ce50e7ab0260803dc31aefdde3ef42dd052105e7f063",true,0]
+//event ["chainlink hackathon 2023 bootcamp","Thrown of Champions"," ==> Remote work station","https://ik.imagekit.io/ub0zwxszt/chainlink.jpeg?updatedAt=1702227083852","https://github.com/sancrystal/image.png",50,1702232883,1702233183,[3,5,10],2,["santacodes","0xa620Ba8bEFa099D0b315b64541e771387a3926a9","0x9abe48fc59a1b5328811ce50e7ab0260803dc31aefdde3ef42dd052105e7f063",true,0]]
+//register entity organization ["santacodes","0xa620Ba8bEFa099D0b315b64541e771387a3926a9","0x9abe48fc59a1b5328811ce50e7ab0260803dc31aefdde3ef42dd052105e7f063",true,0]
+//register entity participant ["pampam","0x80385C0a0b47ba7B1215B719dcB559Dc8Efd3a33","0x72e29f32a0cccb4e4fec467368096fe80c5971c5c92c0fe4be3aa41abce12531",true,1]
+//polygon router 0x70499c328e1e2a3c41108bd3730f6670a44595d1
+//default purchase token ccip-bnm 0xf1E3A5842EeEF51F2967b3F05D45DD4f4205FF40
+
+//contract address. 0x2dfF2b2Ee0DacA513044CcD71ECEfAA07F3e3e7d
+
+//time function ===  const getNowPlus5min=()=>{return {now:(Math.ceil(new Date().getTime()/1000)) ,t5min:(Math.ceil(new Date(new Date().getTime() + 5 * 60000).getTime()/1000))}}
+
+/**
+*Flow of contract execution
+*1 - onboard entities both organizations and participants (0,1);
+*2 - create an event
+*3 - purchase ticket on destination chain
+*4 - change to source chain approve ccip-bnm default purchase token
+*5 - purchase ticket from source chain using ccip-bnm
+*6 - verify tickets
+*7 - remit organizations
+**/

@@ -47,11 +47,11 @@ contract SoulBoundNFT is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable  {
     *@dev  Mint a new soul-bound token and assign it to the specified owner
     */
     function mintSoulBound(address to,string memory uri) external onlyOwner {
-        uint256 tokenId = _nextTokenId++;
-        _safeMint(to, tokenId);
-        _setTokenURI(tokenId, uri);
-        _mint(to, _nextTokenId);
+        _safeMint(to, _nextTokenId);
+        _setTokenURI(_nextTokenId, uri);
         soulBoundTokens[_nextTokenId] = to;
+         _nextTokenId++;
+        require(ERC721(this).balanceOf(to) <=1,"ALREADY_SOULBOUNDED");
         emit SoulBound(_nextTokenId, to);
     }
 
@@ -80,10 +80,13 @@ contract SoulBoundNFT is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable  {
      *@dev  Override the _update function to enforce soul-binding rules
      */
 
+     event test(address to,address sender);
+
     function _update(address to, uint256 tokenId,address auth) internal virtual override(ERC721,ERC721Enumerable) returns (address) {
         address result = super._update(to, tokenId,auth);
         // Check if the token is soul-bound before transfer
-        require(soulBoundTokens[tokenId] != address(0), "TOKEN_BOUND_TO_SELLER"); 
+        require(soulBoundTokens[tokenId] == address(0) && soulBoundTokens[tokenId] !=to &&soulBoundTokens[tokenId] !=msg.sender  , "TOKEN_BOUND_TO_SELLER"); 
+        emit test(to,msg.sender);
         return result;
     }
 
