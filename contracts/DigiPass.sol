@@ -45,6 +45,7 @@ struct Ticket{
     TicketType ticketType;
 }
 
+
 /**
 *@dev Structure of Prices
 *@notice The prices structure represents the category of price that each ticket type would be sold for. The event organizer chooses the price and each price choose would be the price for which the ticket that falls into that category would be exchanged for. The category includes regular , vip and vvip.
@@ -186,7 +187,7 @@ contract DigiPass is CCIPReceiver {
     error TICKET_ALREADY_VERIFIED(uint256  ticketNumber,string eventName);
     error ALREADY_REGISTERED_ENTITY(address entity);
     error EVENT_TICKET_EXPIRED(string name,uint256 endDate);
-    error TicketPurchaseFailure();
+    error TicketPurchaseFailure(address token);
     error EVENT_ORGANIZERS_REMITTTED(address organization);
 
     //============= Events =====================
@@ -215,7 +216,7 @@ contract DigiPass is CCIPReceiver {
     *@notice Remitted Organizer event is emitted when tickets sales period for an event is over and the protocol successfully transfers revenues arcues from tickets sales to the organization.
     */
     event RemittedOrganizer(string indexed name, address indexed organization, uint indexed valueAfterFees);
-    event TicketPurchaseSuccess();
+    event TicketPurchaseSuccess(address token);
 
     constructor(address router,address _defaultPurchaseAddress) CCIPReceiver(router){
         //initialize sender as admin
@@ -278,11 +279,10 @@ contract DigiPass is CCIPReceiver {
     *@param qrCode - qrcode of the ticket to be minted
     *@param ticketType - (Type of ticket) regular|vip|vvip
     */
-    function purchaseTicketCrossChain(address sender,uint256 eventID,string memory qrCode,TicketType ticketType) external {
-        ( uint ticketNumber,uint price,Event memory e) = checkTicket(sender, eventID, ticketType);
-         //check that user has sufficient ask amount
-        if(!(DepositedBalances[sender][defaultPurchaseAddress]>= price)) revert INSUFFICIENT_ASK_PRICE(sender,e.eventParams.name);
-        DepositedBalances[sender][defaultPurchaseAddress] = DepositedBalances[sender][defaultPurchaseAddress] - price;  //
+    function purchaseTicketCrossChain(address sender,uint256 eventID,string memory qrCode,TicketType ticketType,uint256 ticketNumber,uint256 price,uint256 tokenAmount,Event memory e) internal returns (bool) {
+        //check that user has sufficient ask amount
+        if(!(tokenAmount>= price)) revert INSUFFICIENT_ASK_PRICE(sender,e.eventParams.name);
+        // DepositedBalances[sender][defaultPurchaseAddress] = DepositedBalances[sender][defaultPurchaseAddress] - price;  //
         //check tickets availability
         if(!(ticketNumber < e.eventParams.availableTickets)) revert TICKETS_UNAVAILABLE(e.eventParams.name);
         //create a new ticket
@@ -295,6 +295,7 @@ contract DigiPass is CCIPReceiver {
         //mint soulbound nft to sender
         e.nft.mintSoulBound(sender,qrCode);
         emit TicketPurchased (e.eventParams.name,ticketNumber);
+        return true;
     }
 
     /**
@@ -329,18 +330,18 @@ contract DigiPass is CCIPReceiver {
     function _ccipReceive(
         Client.Any2EVMMessage memory message
     ) internal override {
-
-        address sender = abi.decode(message.sender, (address)); // abi-decoding of the sender address
         // Collect tokens transferred.
         Client.EVMTokenAmount[] memory tokenAmounts = message.destTokenAmounts;
         address token = tokenAmounts[0].token;
         uint256 amount = tokenAmounts[0].amount;
+        //decode message function data
+        (address _sender,uint256 _eventID,string memory _qrCode,TicketType _ticketType) = abi.decode(message.data,(address,uint256,string,TicketType));
+        ( uint ticketNumber,uint price,Event memory e) = checkTicket(_sender, _eventID, _ticketType);
+        //call purchase ticket function
+        (bool success) = purchaseTicketCrossChain(_sender,_eventID,_qrCode,_ticketType,ticketNumber,price,amount,e);
 
-        //update sender entity token balance
-        DepositedBalances[sender][token] =  DepositedBalances[sender][defaultPurchaseAddress] + amount;
-        (bool success, ) = address(this).call(message.data);
-        if(!success) revert TicketPurchaseFailure();
-        emit TicketPurchaseSuccess();
+        if(!success) revert TicketPurchaseFailure(token);
+        emit TicketPurchaseSuccess(token);
     }
 
     /**
@@ -455,13 +456,16 @@ contract DigiPass is CCIPReceiver {
     // }
 }
 
-//event ["chainlink hackathon 2023 bootcamp","Thrown of Champions"," ==> Remote work station","https://ik.imagekit.io/ub0zwxszt/chainlink.jpeg?updatedAt=1702227083852","https://github.com/sancrystal/image.png",50,1702232883,1702233183,[3,5,10],2,["santacodes","0xa620Ba8bEFa099D0b315b64541e771387a3926a9","0x9abe48fc59a1b5328811ce50e7ab0260803dc31aefdde3ef42dd052105e7f063",true,0]]
+//event ["chainlink hackathon 2023 bootcamp","Thrown of Champions"," ==> Remote work station","https://ik.imagekit.io/ub0zwxszt/chainlink.jpeg?updatedAt=1702227083852","https://github.com/sancrystal/image.png",50,1702306967,1702310567,[3,5,10],2,["santacodes","0xa620Ba8bEFa099D0b315b64541e771387a3926a9","0x9abe48fc59a1b5328811ce50e7ab0260803dc31aefdde3ef42dd052105e7f063",true,0]]
 //register entity organization ["santacodes","0xa620Ba8bEFa099D0b315b64541e771387a3926a9","0x9abe48fc59a1b5328811ce50e7ab0260803dc31aefdde3ef42dd052105e7f063",true,0]
 //register entity participant ["pampam","0x80385C0a0b47ba7B1215B719dcB559Dc8Efd3a33","0x72e29f32a0cccb4e4fec467368096fe80c5971c5c92c0fe4be3aa41abce12531",true,1]
-//polygon router 0x70499c328e1e2a3c41108bd3730f6670a44595d1
+//register entity participant ["pampam1","0x14F75af344Cb395959F880FeD2b8cb418e644A9e","0x72e29f32a0cccb4e4fec467368096fe80c5971c5c92c0fe4be3aa41abce12531",true,1]
+//ticket type ["0x80385C0a0b47ba7B1215B719dcB559Dc8Efd3a33",2,0,10,false,"https://ik.imagekit.io/ub0zwxszt/chainlink.jpeg?updatedAt=170222",2]
+
+//polygon router 0x1035cabc275068e0f4b745a29cedf38e13af41b1
 //default purchase token ccip-bnm 0xf1E3A5842EeEF51F2967b3F05D45DD4f4205FF40
 
-//contract address. 0x2dfF2b2Ee0DacA513044CcD71ECEfAA07F3e3e7d
+//contract address. 0xe7D708a90E15051F5dd1e59493AE1C040f1D65A6
 
 //time function ===  const getNowPlus5min=()=>{return {now:(Math.ceil(new Date().getTime()/1000)) ,t5min:(Math.ceil(new Date(new Date().getTime() + 5 * 60000).getTime()/1000))}}
 
