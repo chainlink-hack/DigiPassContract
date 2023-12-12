@@ -208,6 +208,8 @@ https://github.com/chainlink-hack/digipass_frontend/assets/58889001/98cae9c5-855
 
 ## Demo Video (Clients POV)
 
+https://github.com/chainlink-hack/DigiPassContract/assets/58889001/3d778d49-32eb-458b-bc1c-947165fbe987
+
 
 - [Pitch Deck](https://github.com/chainlink-hack/digipass_frontend/files/13629815/Microsoft.365.Office.pdf)
 - [Frontend Deployment](https://digipass-frontend.vercel.app/)
