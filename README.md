@@ -20,7 +20,7 @@
   - [Install Dependencies](#install-dependencies)
   - [Steps to host the live site on Vercel](#steps-to-host-the-live-site-on-vercel)
 - [Testing the Smartcontract](#testing-the-smartcontract)
-- [NFT-Factory-MVP Contract Address](#DigiPass-contract-address)
+- [DigiPass-MVP Contract Address](#DigiPass-contract-address)
 - [Live Link](#live-link)
 - [Contributors](#contributors)
 - [Contributing to the project](#contributing-to-the-project)
