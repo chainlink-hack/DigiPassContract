@@ -36,6 +36,12 @@ DigiPass is a pioneering platform that reimagines event ticketing through decent
 > ## Core Features Implemented
 
 `Deployment on Polygon chain`
+Soulbond Nft contract which will be issued as tickets tied to the different events
+
+Note: The Proof-of-Attendance-Protocol (POAP) NFTs are given to attendees at events. Ticketing, as we know, is a popular application of NFTs. Given all the limitations that NFTs have, SBTs provide a more secure tokenization solution. They are non-transferable and could eliminate ticket scalping, selling in black and forging.
+
+To put it simply, just holding a ticket won’t prove that the user attended an event. Building non-transferable POAPs proves that the original owner of the ticket attended the event.
+
 Event Creation and Management:
 
 - Smart contract allows for the creation of events, capturing essential details such as event name, venue, location, image URL, available tickets, start and end dates, ticket prices, categories, and organizing entity information.
